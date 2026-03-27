@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentMemory Desktop</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0f1117; --sidebar: #1a1d27; --surface: #22253a;
+      --border: #2e3350; --text: #e8eaf0; --muted: #8b90a8;
+      --accent: #6c8cff; --accent2: #a78bfa; --danger: #f87171;
+      --success: #34d399; --warning: #fbbf24;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; }
+    /* Sidebar */
+    #sidebar { width: 260px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+    .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); }
+    .sidebar-header h1 { font-size: 15px; font-weight: 600; color: var(--accent); }
+    .sidebar-header p { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    #agent-list { flex: 1; overflow-y: auto; padding: 8px; }
+    .agent-item { display: flex; align-items: center; padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; transition: background 0.15s; }
+    .agent-item:hover { background: var(--surface); }
+    .agent-item.active { background: var(--surface); border: 1px solid var(--accent); }
+    .agent-item .agent-name { font-size: 13px; font-weight: 500; }
+    .agent-item .agent-count { font-size: 11px; color: var(--muted); margin-left: auto; }
+    .agent-item .agent-delete { opacity: 0; margin-left: 8px; color: var(--danger); font-size: 12px; cursor: pointer; transition: opacity 0.15s; }
+    .agent-item:hover .agent-delete { opacity: 1; }
+    #add-agent { padding: 8px; border-top: 1px solid var(--border); }
+    #add-agent input { width: 100%; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 12px; margin-bottom: 6px; }
+    #add-agent input:focus { outline: none; border-color: var(--accent); }
+    #add-agent button { width: 100%; padding: 8px; background: var(--accent); border: none; border-radius: 6px; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+    #add-agent button:hover { opacity: 0.85; }
+    /* Main area */
+    #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    #tabs { display: flex; background: var(--sidebar); border-bottom: 1px solid var(--border); padding: 0 16px; }
+    .tab { padding: 12px 16px; font-size: 13px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    #tab-content { flex: 1; overflow-y: auto; padding: 20px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    /* Empty state */
+    #empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--muted); }
+    #empty-state h2 { font-size: 18px; margin-bottom: 8px; }
+    #empty-state p { font-size: 13px; }
+    /* Cards */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    .card-title { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+    /* Stats grid */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; }
+    .stat-card .value { font-size: 28px; font-weight: 700; color: var(--accent); }
+    .stat-card .label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    /* Memory list */
+    .memory-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; position: relative; }
+    .memory-item .memory-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+    .memory-item .memory-time { font-size: 11px; color: var(--muted); }
+    .memory-item .memory-importance { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--border); }
+    .memory-item .memory-importance.imp-1 { background: #374151; color: #9ca3af; }
+    .memory-item .memory-importance.imp-2 { background: #1f3a5f; color: #60a5fa; }
+    .memory-item .memory-importance.imp-3 { background: #1e3a3a; color: #34d399; }
+    .memory-item .memory-importance.imp-4 { background: #3b2f1e; color: #fbbf24; }
+    .memory-item .memory-importance.imp-5 { background: #3b1e1e; color: #f87171; }
+    .memory-item .memory-pinned { font-size: 11px; color: var(--warning); }
+    .memory-item .memory-content { font-size: 13px; line-height: 1.5; }
+    .memory-item .memory-tags { font-size: 11px; color: var(--accent2); margin-top: 6px; }
+    .memory-item .memory-score { font-size: 11px; color: var(--success); margin-left: 8px; }
+    .memory-item .memory-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; }
+    .memory-item .memory-actions button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 4px; border-radius: 4px; }
+    .memory-item .memory-actions button:hover { color: var(--text); background: var(--border); }
+    /* Search */
+    #search-box { display: flex; gap: 8px; margin-bottom: 16px; }
+    #search-box input { flex: 1; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; }
+    #search-box input:focus { outline: none; border-color: var(--accent); }
+    #search-box button { padding: 10px 18px; background: var(--accent); border: none; border-radius: 8px; color: #fff; font-size: 13px; cursor: pointer; }
+    #search-box button:hover { opacity: 0.85; }
+    /* Add memory form */
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .form-group textarea, .form-group input { width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 13px; font-family: inherit; }
+    .form-group textarea:focus, .form-group input:focus { outline: none; border-color: var(--accent); }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+    .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: opacity 0.15s; }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-warning { background: var(--warning); color: #000; }
+    .btn-sm { padding: 4px 10px; font-size: 11px; }
+    /* Settings */
+    .settings-section { margin-bottom: 24px; }
+    .settings-section h3 { font-size: 14px; margin-bottom: 12px; color: var(--accent); }
+    .setting-row { display: flex; align-items: center; margin-bottom: 10px; gap: 12px; }
+    .setting-row label { width: 180px; font-size: 13px; color: var(--muted); }
+    .setting-row input, .setting-row select { flex: 1; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 13px; }
+    /* Chart area */
+    #chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; height: 200px; position: relative; }
+    .chart-bar { display: flex; align-items: flex-end; gap: 2px; height: 100%; padding-top: 20px; }
+    .chart-bar .bar { flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; transition: background 0.15s; }
+    .chart-bar .bar:hover { background: var(--accent2); }
+    .chart-labels { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; color: var(--muted); }
+    /* Filter bar */
+    .filter-bar { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; }
+    .filter-bar select { padding: 6px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 12px; }
+    /* Loading */
+    .loading { text-align: center; padding: 20px; color: var(--muted); font-size: 13px; }
+    /* Toast */
+    #toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 18px; background: var(--success); color: #fff; border-radius: 8px; font-size: 13px; font-weight: 500; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 1000; }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div class="sidebar-header">
+    <h1>🧠 AgentMemory</h1>
+    <p>Long-term memory for AI agents</p>
+  </div>
+  <div id="agent-list"></div>
+  <div id="add-agent">
+    <input type="text" id="new-agent-name" placeholder="New agent name..." />
+    <button onclick="createAgent()">+ Add Agent</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="tabs">
+    <div class="tab active" data-tab="memories">Memories</div>
+    <div class="tab" data-tab="search">Search</div>
+    <div class="tab" data-tab="dashboard">Dashboard</div>
+    <div class="tab" data-tab="settings">Settings</div>
+  </div>
+  <div id="tab-content">
+
+    <!-- Empty State -->
+    <div id="empty-state">
+      <h2>No Agent Selected</h2>
+      <p>Create or select an agent to get started</p>
+    </div>
+
+    <!-- Memories Tab -->
+    <div id="tab-memories" class="tab-panel" style="display:none">
+      <div class="filter-bar">
+        <select id="filter-importance" onchange="loadMemories()">
+          <option value="">All importance</option>
+          <option value="4">⭐4+</option>
+          <option value="3">⭐3+</option>
+          <option value="2">⭐2+</option>
+        </select>
+        <select id="filter-pinned" onchange="loadMemories()">
+          <option value="">All</option>
+          <option value="true">📌 Pinned only</option>
+          <option value="false">Unpinned only</option>
+        </select>
+        <button class="btn btn-sm btn-warning" onclick="runForgetting()">🗑️ Run Forgetting</button>
+        <button class="btn btn-sm btn-primary" onclick="exportAgent()">📤 Export</button>
+        <button class="btn btn-sm btn-primary" onclick="showImportModal()">📥 Import</button>
+      </div>
+      <div id="memory-list"></div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-title">Add Memory</div>
+        <div class="form-group">
+          <textarea id="new-memory-content" rows="3" placeholder="What should this agent remember?"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Importance (1-5)</label>
+            <input type="number" id="new-memory-importance" min="1" max="5" value="3" />
+          </div>
+          <div class="form-group">
+            <label>Tags (comma separated)</label>
+            <input type="text" id="new-memory-tags" placeholder="e.g. project, work, personal" />
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:10px;">
+          <input type="checkbox" id="new-memory-pinned" /> 📌 Pin this memory (prevent forgetting)
+        </label>
+        <button class="btn btn-primary" onclick="addMemory()">Add Memory</button>
+      </div>
+    </div>
+
+    <!-- Search Tab -->
+    <div id="tab-search" class="tab-panel">
+      <div id="search-box">
+        <input type="text" id="search-input" placeholder="Search memories semantically... (uses Ollama embeddings)" onkeydown="if(event.key==='Enter')searchMemories()" />
+        <button onclick="searchMemories()">Search</button>
+      </div>
+      <div id="search-results"></div>
+    </div>
+
+    <!-- Dashboard Tab -->
+    <div id="tab-dashboard" class="tab-panel">
+      <div class="stats-grid" id="stats-grid"></div>
+      <div class="card">
+        <div class="card-title">Memory Activity (Last 30 Days)</div>
+        <div id="chart-container">
+          <div class="chart-bar" id="chart-bars"></div>
+          <div class="chart-labels" id="chart-labels"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-title">Forgetting Strategy</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">Automatically removes memories that are: old (past decay threshold) + low importance + not pinned</p>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Decay after (days)</label>
+            <input type="number" id="forget-days" min="1" max="365" value="7" />
+          </div>
+          <div class="form-group">
+            <label>Importance threshold</label>
+            <input type="number" id="forget-threshold" min="1" max="5" value="2" />
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-warning" onclick="runForgetting()">🗑️ Run Forgetting (dry run)</button>
+          <button class="btn btn-danger btn-sm" onclick="runForgetting(true)">🗑️ Run & Delete</button>
+        </div>
+        <div id="forget-result" style="margin-top:10px;font-size:13px;color:var(--muted)"></div>
+      </div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div id="tab-settings" class="tab-panel">
+      <div class="settings-section">
+        <h3>🔗 Ollama Configuration</h3>
+        <div class="setting-row">
+          <label>Ollama URL</label>
+          <input type="text" id="setting-ollama" value="http://localhost:11434" />
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-top:6px;">Used for semantic search embeddings. Falls back to keyword search if unavailable.</p>
+      </div>
+      <div class="settings-section">
+        <h3>🧠 Forgetting Defaults</h3>
+        <div class="setting-row">
+          <label>Decay after (days)</label>
+          <input type="number" id="setting-decay" min="1" max="365" value="7" />
+        </div>
+        <div class="setting-row">
+          <label>Importance threshold</label>
+          <input type="number" id="setting-threshold" min="1" max="5" value="2" />
+        </div>
+        <button class="btn btn-primary" style="margin-top:8px" onclick="saveSettings()">Save Settings</button>
+      </div>
+      <div class="settings-section">
+        <h3>ℹ️ About</h3>
+        <p style="font-size:13px;color:var(--muted);">AgentMemory Desktop v1.0.0<br>AI Agent long-term memory management with semantic search and adaptive forgetting strategies.</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div id="import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;align-items:center;justify-content:center;">
+  <div style="background:var(--sidebar);border:1px solid var(--border);border-radius:12px;padding:24px;width:480px;max-height:80vh;overflow-y:auto;">
+    <h3 style="margin-bottom:12px;">📥 Import Memories</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">Paste JSON export data (from another agent or backup)</p>
+    <textarea id="import-json" rows="8" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:monospace;" placeholder='{"memories": [...], "agent": {...}}'></textarea>
+    <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">
+      <button class="btn btn-sm" onclick="document.getElementById('import-modal').style.display='none'">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="importAgent()">Import</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let currentAgentId = null;
+let agents = [];
+
+function toast(msg, color = 'var(--success)') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = color;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+async function loadAgents() {
+  agents = await window.api.getAgents();
+  renderAgentList();
+}
+
+function renderAgentList() {
+  const list = document.getElementById('agent-list');
+  list.innerHTML = agents.map(a => `
+    <div class="agent-item${a.id === currentAgentId ? ' active' : ''}" onclick="selectAgent('${a.id}')">
+      <span class="agent-name">${escHtml(a.name)}</span>
+      <span class="agent-delete" onclick="event.stopPropagation();deleteAgent('${a.id}')">✕</span>
+    </div>
+  `).join('');
+}
+
+async function createAgent() {
+  const name = document.getElementById('new-agent-name').value.trim();
+  if (!name) return;
+  await window.api.createAgent({ name });
+  document.getElementById('new-agent-name').value = '';
+  await loadAgents();
+  toast('Agent created!');
+}
+
+async function deleteAgent(id) {
+  if (!confirm('Delete this agent and all its memories?')) return;
+  await window.api.deleteAgent(id);
+  if (currentAgentId === id) currentAgentId = null;
+  await loadAgents();
+  renderMain();
+  toast('Agent deleted');
+}
+
+function selectAgent(id) {
+  currentAgentId = id;
+  renderAgentList();
+  renderMain();
+}
+
+async function renderMain() {
+  const empty = document.getElementById('empty-state');
+  const tabs = document.querySelectorAll('.tab-panel');
+  if (!currentAgentId) {
+    empty.style.display = 'flex';
+    tabs.forEach(t => t.style.display = 'none');
+    return;
+  }
+  empty.style.display = 'none';
+  document.getElementById('tab-memories').style.display = 'block';
+  document.getElementById('tab-memories').classList.add('active');
+  loadMemories();
+  loadStats();
+}
+
+async function loadMemories() {
+  if (!currentAgentId) return;
+  const importance = document.getElementById('filter-importance').value;
+  const pinned = document.getElementById('filter-pinned').value;
+  const filters = {};
+  if (importance) filters.importance = importance;
+  if (pinned) filters.pinned = pinned;
+
+  const memories = await window.api.getMemories(currentAgentId, filters);
+  document.getElementById('memory-list').innerHTML = memories.length
+    ? memories.map(m => renderMemoryItem(m)).join('')
+    : '<p style="text-align:center;color:var(--muted);padding:20px;font-size:13px;">No memories yet. Add one below!</p>';
+}
+
+function renderMemoryItem(m) {
+  return `
+    <div class="memory-item">
+      <div class="memory-meta">
+        <span class="memory-time">${new Date(m.created_at).toLocaleString()}</span>
+        <span class="memory-importance imp-${m.importance}">⭐${m.importance}</span>
+        ${m.pinned ? '<span class="memory-pinned">📌</span>' : ''}
+        <div class="memory-actions">
+          <button onclick="togglePin('${m.id}', ${!m.pinned})">${m.pinned ? '📌' : '📍'}</button>
+          <button onclick="deleteMemory('${m.id}')" style="color:var(--danger)">✕</button>
+        </div>
+      </div>
+      <div class="memory-content">${escHtml(m.content)}</div>
+      ${m.tags ? `<div class="memory-tags">${escHtml(m.tags)}</div>` : ''}
+    </div>
+  `;
+}
+
+async function addMemory() {
+  if (!currentAgentId) return;
+  const content = document.getElementById('new-memory-content').value.trim();
+  if (!content) return toast('Content required', 'var(--danger)');
+  await window.api.createMemory(currentAgentId, {
+    content,
+    importance: parseInt(document.getElementById('new-memory-importance').value),
+    tags: document.getElementById('new-memory-tags').value.trim(),
+    pinned: document.getElementById('new-memory-pinned').checked
+  });
+  document.getElementById('new-memory-content').value = '';
+  document.getElementById('new-memory-pinned').checked = false;
+  await loadMemories();
+  await loadStats();
+  toast('Memory added!');
+}
+
+async function togglePin(id, pinned) {
+  await window.api.updateMemory(id, { pinned });
+  await loadMemories();
+}
+
+async function deleteMemory(id) {
+  if (!confirm('Delete this memory?')) return;
+  await window.api.deleteMemory(id);
+  await loadMemories();
+  await loadStats();
+  toast('Memory deleted');
+}
+
+async function searchMemories() {
+  if (!currentAgentId) return;
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+  document.getElementById('search-results').innerHTML = '<div class="loading">Searching...</div>';
+  const results = await window.api.searchMemories(currentAgentId, q, 15);
+  document.getElementById('search-results').innerHTML = results.length
+    ? results.map(m => `
+      <div class="memory-item">
+        <div class="memory-meta">
+          <span class="memory-time">${new Date(m.created_at).toLocaleString()}</span>
+          <span class="memory-importance imp-${m.importance}">⭐${m.importance}</span>
+          ${m.score !== undefined ? `<span class="memory-score"> similarity: ${(m.score * 100).toFixed(0)}%</span>` : ''}
+        </div>
+        <div class="memory-content">${escHtml(m.content)}</div>
+        ${m.tags ? `<div class="memory-tags">${escHtml(m.tags)}</div>` : ''}
+      </div>
+    `).join('')
+    : '<p style="text-align:center;color:var(--muted);padding:20px;">No results found. Ollama may be unavailable — using keyword search fallback.</p>';
+}
+
+async function loadStats() {
+  if (!currentAgentId) return;
+  const stats = await window.api.getStats(currentAgentId);
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card"><div class="value">${stats.total}</div><div class="label">Total Memories</div></div>
+    <div class="stat-card"><div class="value">${stats.pinned}</div><div class="label">📌 Pinned</div></div>
+    <div class="stat-card"><div class="value">${stats.avgImportance}</div><div class="label">Avg Importance</div></div>
+    <div class="stat-card"><div class="value">${stats.forgettingCandidates}</div><div class="label">🗑️ Forgetting Candidates</div></div>
+    <div class="stat-card"><div class="value">${stats.oldest ? daysAgo(stats.oldest) : '—'}</div><div class="label">Oldest (days)</div></div>
+    <div class="stat-card"><div class="value">${stats.newest ? '✓' : '—'}</div><div class="label">Newest added</div></div>
+  `;
+  renderChart(stats.byDay);
+}
+
+function renderChart(byDay) {
+  const bars = document.getElementById('chart-bars');
+  const labels = document.getElementById('chart-labels');
+  if (!byDay || byDay.length === 0) {
+    bars.innerHTML = '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;height:100%">No data yet — add some memories!</div>';
+    labels.innerHTML = '';
+    return;
+  }
+  const max = Math.max(...byDay.map(d => d.count));
+  bars.innerHTML = byDay.map(d => {
+    const h = max > 0 ? Math.max(4, Math.round((d.count / max) * 150)) : 4;
+    return `<div class="bar" style="height:${h}px" title="${d.day}: ${d.count}"></div>`;
+  }).join('');
+  labels.innerHTML = byDay.length <= 7
+    ? byDay.map(d => `<span>${d.day.slice(5)}</span>`).join('')
+    : `<span>${byDay[0].day.slice(5)}</span><span>${byDay[Math.floor(byDay.length/2)].day.slice(5)}</span><span>${byDay[byDay.length-1].day.slice(5)}</span>`;
+}
+
+async function runForgetting(actuallyDelete = false) {
+  if (!currentAgentId) return;
+  const result = await window.api.runForgetting(currentAgentId);
+  const decayDays = parseInt(document.getElementById('forget-days')?.value || 7);
+  const threshold = parseInt(document.getElementById('forget-threshold')?.value || 2);
+
+  const r = await fetch(`/api/agents/${currentAgentId}/memories/forget`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ decayDays, importanceThreshold: threshold, dryRun: !actuallyDelete })
+  }).then(r => r.json());
+
+  document.getElementById('forget-result').textContent = r.message;
+  await loadMemories();
+  await loadStats();
+  toast(r.message);
+}
+
+async function exportAgent() {
+  if (!currentAgentId) return;
+  const data = await window.api.exportAgent(currentAgentId);
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${data.agent.name.replace(/\s+/g, '_')}_memories.json`;
+  a.click();
+  toast('Exported!');
+}
+
+function showImportModal() {
+  document.getElementById('import-modal').style.display = 'flex';
+}
+
+async function importAgent() {
+  if (!currentAgentId) return;
+  const json = document.getElementById('import-json').value.trim();
+  if (!json) return toast('Paste JSON data', 'var(--danger)');
+  try {
+    const data = JSON.parse(json);
+    const r = await window.api.importAgent(currentAgentId, { memories: data.memories || [] });
+    document.getElementById('import-modal').style.display = 'none';
+    document.getElementById('import-json').value = '';
+    await loadMemories();
+    await loadStats();
+    toast(`Imported ${r.imported} memories!`);
+  } catch (e) {
+    toast('Invalid JSON: ' + e.message, 'var(--danger)');
+  }
+}
+
+async function saveSettings() {
+  const ollamaUrl = document.getElementById('setting-ollama').value;
+  const decayDays = parseInt(document.getElementById('setting-decay').value);
+  const importanceThreshold = parseInt(document.getElementById('setting-threshold').value);
+  await fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ollamaUrl, decayDays, importanceThreshold })
+  });
+  toast('Settings saved!');
+}
+
+function daysAgo(dateStr) {
+  const ms = Date.now() - new Date(dateStr).getTime();
+  return Math.round(ms / 86400000);
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Tabs
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    const panel = document.getElementById('tab-' + tab.dataset.tab);
+    if (panel) { panel.style.display = 'block'; panel.classList.add('active'); }
+    if (tab.dataset.tab === 'dashboard') loadStats();
+    if (tab.dataset.tab === 'settings') loadSettings();
+  });
+});
+
+// Load settings
+async function loadSettings() {
+  try {
+    const r = await fetch('/api/settings');
+    const s = await r.json();
+    document.getElementById('setting-ollama').value = s.ollama_url || 'http://localhost:11434';
+    document.getElementById('setting-decay').value = s.decay_days || 7;
+    document.getElementById('setting-threshold').value = s.importance_threshold || 2;
+    document.getElementById('forget-days').value = s.decay_days || 7;
+    document.getElementById('forget-threshold').value = s.importance_threshold || 2;
+  } catch {}
+}
+
+// Init
+loadAgents();
+</script>
+</body>
+</html>

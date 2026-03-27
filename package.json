@@ -1,0 +1,22 @@
+{
+  "name": "agent-memory-desktop",
+  "version": "1.0.0",
+  "description": "AI Agent long-term memory management with semantic search and forgetting strategies",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "server": "node server.js",
+    "test": "node test/api.test.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "express": "^4.22.1",
+    "uuid": "^11.0.5"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  },
+  "keywords": ["agent", "memory", "semantic-search", "electron", "ollama", "vector-db"],
+  "license": "MIT",
+  "author": "ZSeven-W"
+}
