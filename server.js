@@ -1,6 +1,8 @@
 const express = require('express');
 const path = require('path');
-const { initDb } = require('./src/db');
+const { initDb, createMemoryLink, getMemoryLinks, deleteMemoryLink, getLinkStats,
+  getAllTags, renameTag, mergeTags, getTagCloud,
+  getImportanceDistribution, getForgettingTimeline } = require('./src/db');
 const { getEmbedding, searchByEmbedding } = require('./src/embed');
 const { runForgetting } = require('./src/forget');
 
@@ -171,40 +173,6 @@ app.get('/api/agents/:agentId/memories/search', async (req, res) => {
   }
 });
 
-// ─── Stats ────────────────────────────────────────────────────────────────────
-app.get('/api/agents/:agentId/stats', (req, res) => {
-  try {
-    const { agentId } = req.params;
-    const total = db.prepare('SELECT COUNT(*) as count FROM memories WHERE agent_id = ?').get(agentId);
-    const oldest = db.prepare('SELECT MIN(created_at) as oldest FROM memories WHERE agent_id = ?').get(agentId);
-    const newest = db.prepare('SELECT MAX(created_at) as newest FROM memories WHERE agent_id = ?').get(agentId);
-    const pinned = db.prepare('SELECT COUNT(*) as count FROM memories WHERE agent_id = ? AND pinned = 1').get(agentId);
-    const avgImportance = db.prepare('SELECT AVG(importance) as avg FROM memories WHERE agent_id = ?').get(agentId);
-
-    // Forgetting candidates (old + low importance)
-    const candidates = db.prepare(
-      "SELECT COUNT(*) as count FROM memories WHERE agent_id = ? AND pinned = 0 AND importance <= 2 AND date('now') > date(created_at, '+7 days')"
-    ).get(agentId);
-
-    // Memories per day (last 30 days)
-    const byDay = db.prepare(
-      "SELECT date(created_at) as day, COUNT(*) as count FROM memories WHERE agent_id = ? AND created_at >= date('now', '-30 days') GROUP BY day ORDER BY day"
-    ).all(agentId);
-
-    res.json({
-      total: total.count,
-      oldest: oldest.oldest,
-      newest: newest.newest,
-      pinned: pinned.count,
-      avgImportance: avgImportance.avg ? parseFloat(avgImportance.avg.toFixed(1)) : 0,
-      forgettingCandidates: candidates.count,
-      byDay
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ─── Forgetting ───────────────────────────────────────────────────────────────
 app.post('/api/agents/:agentId/memories/forget', (req, res) => {
   try {
@@ -247,6 +215,116 @@ app.post('/api/import/:agentId', (req, res) => {
       imported++;
     }
     res.json({ imported });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Memory Links ─────────────────────────────────────────────────────────────
+app.get('/api/memories/:id/links', (req, res) => {
+  try {
+    const { id } = req.params;
+    const links = getMemoryLinks(db, id);
+    res.json(links);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/memories/:id/links', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { toMemoryId, relationType = 'related' } = req.body;
+    if (!toMemoryId) return res.status(400).json({ error: 'toMemoryId required' });
+    const link = createMemoryLink(db, id, toMemoryId, relationType);
+    res.status(201).json(link);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/memories/:id/links/:linkId', (req, res) => {
+  try {
+    const { linkId } = req.params;
+    deleteMemoryLink(db, linkId);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Tags ─────────────────────────────────────────────────────────────────────
+app.get('/api/tags', (req, res) => {
+  try {
+    const { agentId } = req.query;
+    if (!agentId) return res.status(400).json({ error: 'agentId query param required' });
+    const tags = getAllTags(db, agentId);
+    res.json(tags);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/tags/:name', (req, res) => {
+  try {
+    const { name } = req.params;
+    const { newName, agentId } = req.body;
+    if (!newName || !agentId) return res.status(400).json({ error: 'newName and agentId required' });
+    const updated = renameTag(db, agentId, name, newName);
+    res.json({ ok: true, updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tags/:name/merge', (req, res) => {
+  try {
+    const { name } = req.params;
+    const { intoTag, agentId } = req.body;
+    if (!intoTag || !agentId) return res.status(400).json({ error: 'intoTag and agentId required' });
+    const updated = mergeTags(db, agentId, name, intoTag);
+    res.json({ ok: true, updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Enhanced Stats ───────────────────────────────────────────────────────────
+app.get('/api/agents/:agentId/stats', (req, res) => {
+  try {
+    const { agentId } = req.params;
+    const total = db.prepare('SELECT COUNT(*) as count FROM memories WHERE agent_id = ?').get(agentId);
+    const oldest = db.prepare('SELECT MIN(created_at) as oldest FROM memories WHERE agent_id = ?').get(agentId);
+    const newest = db.prepare('SELECT MAX(created_at) as newest FROM memories WHERE agent_id = ?').get(agentId);
+    const pinned = db.prepare('SELECT COUNT(*) as count FROM memories WHERE agent_id = ? AND pinned = 1').get(agentId);
+    const avgImportance = db.prepare('SELECT AVG(importance) as avg FROM memories WHERE agent_id = ?').get(agentId);
+
+    const candidates = db.prepare(
+      "SELECT COUNT(*) as count FROM memories WHERE agent_id = ? AND pinned = 0 AND importance <= 2 AND date('now') > date(created_at, '+7 days')"
+    ).get(agentId);
+
+    const byDay = db.prepare(
+      "SELECT date(created_at) as day, COUNT(*) as count FROM memories WHERE agent_id = ? AND created_at >= date('now', '-30 days') GROUP BY day ORDER BY day"
+    ).all(agentId);
+
+    const tagCloud = getTagCloud(db, agentId);
+    const importanceDist = getImportanceDistribution(db, agentId);
+    const forgettingTimeline = getForgettingTimeline(db, agentId);
+    const linkStats = getLinkStats(db, agentId);
+
+    res.json({
+      total: total.count,
+      oldest: oldest.oldest,
+      newest: newest.newest,
+      pinned: pinned.count,
+      avgImportance: avgImportance.avg ? parseFloat(avgImportance.avg.toFixed(1)) : 0,
+      forgettingCandidates: candidates.count,
+      byDay,
+      tagCloud,
+      importanceDist,
+      forgettingTimeline,
+      linkStats
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

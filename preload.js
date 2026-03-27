@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('api', {
+const api = {
   // Agents
   getAgents: () => fetch('/api/agents').then(r => r.json()),
   createAgent: (data) => fetch('/api/agents', {
@@ -27,13 +27,36 @@ contextBridge.exposeInMainWorld('api', {
   }).then(r => r.json()),
   deleteMemory: (id) => fetch(`/api/memories/${id}`, { method: 'DELETE' }).then(r => r.json()),
 
+  // Memory Links
+  getMemoryLinks: (memoryId) => fetch(`/api/memories/${memoryId}/links`).then(r => r.json()),
+  createMemoryLink: (memoryId, data) => fetch(`/api/memories/${memoryId}/links`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(r => r.json()),
+  deleteMemoryLink: (memoryId, linkId) => fetch(`/api/memories/${memoryId}/links/${linkId}`, { method: 'DELETE' }).then(r => r.json()),
+
   // Search
-  searchMemories: (agentId, q, limit) => {
-    return fetch(`/api/agents/${agentId}/memories/search?q=${encodeURIComponent(q)}&limit=${limit || 10}`).then(r => r.json());
+  searchMemories: (agentId, q, filters) => {
+    const params = new URLSearchParams({ q, ...(filters || {}) });
+    return fetch(`/api/agents/${agentId}/memories/search?${params}`).then(r => r.json());
   },
 
   // Stats
   getStats: (agentId) => fetch(`/api/agents/${agentId}/stats`).then(r => r.json()),
+
+  // Tags
+  getTags: (agentId) => fetch(`/api/tags?agentId=${agentId}`).then(r => r.json()),
+  renameTag: (name, agentId, newName) => fetch(`/api/tags/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newName, agentId })
+  }).then(r => r.json()),
+  mergeTags: (name, agentId, intoTag) => fetch(`/api/tags/${encodeURIComponent(name)}/merge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ intoTag, agentId })
+  }).then(r => r.json()),
 
   // Forgetting
   runForgetting: (agentId) => fetch(`/api/agents/${agentId}/memories/forget`, {
@@ -50,4 +73,6 @@ contextBridge.exposeInMainWorld('api', {
 
   // Health
   health: () => fetch('/api/health').then(r => r.json())
-});
+};
+
+contextBridge.exposeInMainWorld('api', api);

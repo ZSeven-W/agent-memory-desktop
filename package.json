@@ -1,6 +1,6 @@
 {
   "name": "agent-memory-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "AI Agent long-term memory management with semantic search and forgetting strategies",
   "main": "main.js",
   "scripts": {
