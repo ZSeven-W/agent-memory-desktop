@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron .",
     "server": "node server.js",
-    "test": "node test/api.test.js"
+    "test": "node test/api.test.js && node test/http.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
@@ -14,9 +14,17 @@
     "uuid": "^11.0.5"
   },
   "devDependencies": {
-    "electron": "^33.2.0"
+    "electron": "^33.2.0",
+    "supertest": "^7.2.2"
   },
-  "keywords": ["agent", "memory", "semantic-search", "electron", "ollama", "vector-db"],
+  "keywords": [
+    "agent",
+    "memory",
+    "semantic-search",
+    "electron",
+    "ollama",
+    "vector-db"
+  ],
   "license": "MIT",
   "author": "ZSeven-W"
 }

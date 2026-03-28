@@ -9,6 +9,7 @@ function initDb(dataDir) {
   const db = new Database(dbPath);
 
   db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS agents (
@@ -55,12 +56,33 @@ function initDb(dataDir) {
       importance_threshold INTEGER DEFAULT 2
     );
 
+    CREATE TABLE IF NOT EXISTS search_history (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      query TEXT NOT NULL,
+      results_count INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS reminders (
+      id TEXT PRIMARY KEY,
+      memory_id TEXT NOT NULL,
+      remind_at TEXT NOT NULL,
+      message TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id);
     CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at);
     CREATE INDEX IF NOT EXISTS idx_embeddings_agent ON embeddings(agent_id);
     CREATE INDEX IF NOT EXISTS idx_embeddings_memory ON embeddings(memory_id);
     CREATE INDEX IF NOT EXISTS idx_links_from ON memory_links(from_memory_id);
     CREATE INDEX IF NOT EXISTS idx_links_to ON memory_links(to_memory_id);
+    CREATE INDEX IF NOT EXISTS idx_search_history_agent ON search_history(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_reminders_memory ON reminders(memory_id);
+    CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(remind_at);
   `);
 
   return db;
@@ -185,5 +207,72 @@ module.exports = {
   initDb,
   createMemoryLink, getMemoryLinks, deleteMemoryLink, getLinkStats,
   getAllTags, renameTag, mergeTags, getTagCloud,
-  getImportanceDistribution, getForgettingTimeline
+  getImportanceDistribution, getForgettingTimeline,
+  addSearchHistory, getSearchHistory, deleteSearchHistory,
+  createReminder, getRemindersForMemory, deleteReminder, getDueReminders, getReminderCount
 };
+
+// ─── Search History ───────────────────────────────────────────────────────────
+function addSearchHistory(db, agentId, query, resultsCount) {
+  const id = require('uuid').v4();
+  db.prepare(
+    'INSERT INTO search_history (id, agent_id, query, results_count) VALUES (?, ?, ?, ?)'
+  ).run(id, agentId, query, resultsCount || 0);
+  // Keep only last 50 per agent
+  db.prepare(
+    `DELETE FROM search_history WHERE agent_id = ? AND id NOT IN (
+      SELECT id FROM search_history WHERE agent_id = ? ORDER BY created_at DESC LIMIT 50
+    )`
+  ).run(agentId, agentId);
+  return id;
+}
+
+function getSearchHistory(db, agentId, limit = 50) {
+  return db.prepare(
+    'SELECT * FROM search_history WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?'
+  ).all(agentId, limit);
+}
+
+function deleteSearchHistory(db, searchId) {
+  return db.prepare('DELETE FROM search_history WHERE id = ?').run(searchId);
+}
+
+// ─── Reminders ────────────────────────────────────────────────────────────────
+function createReminder(db, memoryId, remindAt, message) {
+  const id = require('uuid').v4();
+  db.prepare(
+    'INSERT INTO reminders (id, memory_id, remind_at, message) VALUES (?, ?, ?, ?)'
+  ).run(id, memoryId, remindAt, message || '');
+  return db.prepare('SELECT * FROM reminders WHERE id = ?').get(id);
+}
+
+function getRemindersForMemory(db, memoryId) {
+  return db.prepare(
+    'SELECT * FROM reminders WHERE memory_id = ? ORDER BY remind_at ASC'
+  ).all(memoryId);
+}
+
+function deleteReminder(db, reminderId) {
+  return db.prepare('DELETE FROM reminders WHERE id = ?').run(reminderId);
+}
+
+function getDueReminders(db, agentId) {
+  const now = new Date().toISOString();
+  return db.prepare(
+    `SELECT r.*, m.content as memory_content, m.agent_id
+     FROM reminders r
+     JOIN memories m ON m.id = r.memory_id
+     WHERE m.agent_id = ? AND r.remind_at <= ?
+     ORDER BY r.remind_at ASC`
+  ).all(agentId, now);
+}
+
+function getReminderCount(db, agentId) {
+  const now = new Date().toISOString();
+  const result = db.prepare(
+    `SELECT COUNT(*) as count FROM reminders r
+     JOIN memories m ON m.id = r.memory_id
+     WHERE m.agent_id = ? AND r.remind_at <= ?`
+  ).get(agentId, now);
+  return result.count;
+}

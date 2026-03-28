@@ -131,7 +131,103 @@ try {
   assert(oldCandidates >= 1);
   console.log('✓ Old memories become forgetting candidates');
 
-  console.log('\n✅ All 17 tests passed!');
+  // Test 18: Search history - store
+  const { addSearchHistory, getSearchHistory, deleteSearchHistory } = require('../src/db');
+  const searchId = addSearchHistory(db, agentId, 'test query', 5);
+  assert(searchId !== undefined);
+  console.log('✓ Search history store works');
+
+  // Test 19: Search history - retrieve
+  const history = getSearchHistory(db, agentId);
+  assert(Array.isArray(history));
+  assert(history.length >= 1);
+  assert(history[0].query === 'test query');
+  assert(history[0].results_count === 5);
+  console.log('✓ Search history retrieve works');
+
+  // Test 20: Search history - delete
+  const before = getSearchHistory(db, agentId).length;
+  deleteSearchHistory(db, searchId);
+  const after = getSearchHistory(db, agentId).length;
+  assert(before > after);
+  console.log('✓ Search history delete works');
+
+  // Test 21: Reminders - create (use a surviving memory)
+  const { createReminder, getRemindersForMemory, deleteReminder, getDueReminders, getReminderCount } = require('../src/db');
+  // memIds[3] is pinned with imp=4, it survives forgetting
+  const futureDate = new Date(Date.now() + 86400000).toISOString();
+  const reminder = createReminder(db, memIds[3], futureDate, 'Review this');
+  assert(reminder !== undefined);
+  assert(reminder.message === 'Review this');
+  console.log('✓ Reminder creation works');
+
+  // Test 22: Reminders - list for memory
+  const reminders = getRemindersForMemory(db, memIds[3]);
+  assert(Array.isArray(reminders));
+  assert(reminders.length >= 1);
+  console.log('✓ Reminder list works');
+
+  // Test 23: Reminders - delete
+  deleteReminder(db, reminder.id);
+  const afterDelete = getRemindersForMemory(db, memIds[3]);
+  assert(afterDelete.length === 0);
+  console.log('✓ Reminder delete works');
+
+  // Test 24: Reminders - due (past reminder on surviving memory)
+  const pastDate = new Date(Date.now() - 86400000).toISOString();
+  createReminder(db, memIds[3], pastDate, 'Past reminder');
+  const due = getDueReminders(db, agentId);
+  assert(Array.isArray(due));
+  assert(due.length >= 1);
+  console.log('✓ Due reminders works');
+
+  // Test 25: Reminder count in stats
+  const count = getReminderCount(db, agentId);
+  assert(typeof count === 'number');
+  assert(count >= 1);
+  console.log('✓ Reminder count works');
+
+  // Test 26: Validation - agent name required
+  const { validateAgentName } = require('../src/validate');
+  const r1 = validateAgentName('');
+  assert(!r1.valid && r1.code === 'VALIDATION_ERROR');
+  const r2 = validateAgentName('  ');
+  assert(!r2.valid);
+  console.log('✓ Agent name validation works');
+
+  // Test 27: Validation - agent name length
+  const r3 = validateAgentName('a'.repeat(101));
+  assert(!r3.valid);
+  console.log('✓ Agent name length validation works');
+
+  // Test 28: Validation - valid agent name
+  const r4 = validateAgentName('Valid Agent 123');
+  assert(r4.valid && r4.value === 'Valid Agent 123');
+  console.log('✓ Valid agent name passes');
+
+  // Test 29: Validation - importance bounds
+  const { validateImportance } = require('../src/validate');
+  assert(!validateImportance(0).valid);
+  assert(!validateImportance(6).valid);
+  assert(!validateImportance('abc').valid);
+  assert(validateImportance(3).valid);
+  console.log('✓ Importance validation works');
+
+  // Test 30: Validation - tags limit
+  const { validateTags } = require('../src/validate');
+  const manyTags = Array(21).fill('tag').map((t, i) => t + i).join(',');
+  assert(!validateTags(manyTags).valid);
+  assert(!validateTags('').valid === false); // empty is valid
+  console.log('✓ Tags validation works');
+
+  // Test 31: Validation - relation type
+  const { validateRelationType } = require('../src/validate');
+  assert(!validateRelationType('invalid_type').valid);
+  assert(validateRelationType('parent').valid);
+  assert(validateRelationType('').valid); // default
+  console.log('✓ Relation type validation works');
+
+  console.log('\n✅ All 31 tests passed!');
 } catch (err) {
   console.error('❌ Test failed:', err.message, err.stack);
   process.exit(1);
